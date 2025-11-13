@@ -3,36 +3,46 @@ name: Deploy
 on:
   push:
     branches: [ "main" ]
+  workflow_dispatch:
 
 env:
   AWS_REGION: ap-south-1
-  ECR_REPO: ${{ vars.ECR_REPO }}           # set in repo or org variables
+  ECR_REPO: ${{ vars.ECR_REPO }}          # Must be set in repo/org variables
   IMAGE_TAG: ${{ github.sha }}
   TF_WORKING_DIR: infra
 
 jobs:
+  # -------------------------------
+  # 1️⃣ BUILD + PUSH TO ECR
+  # -------------------------------
   build-push:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Configure AWS (OIDC)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}   # IAM role for GH OIDC
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
+      # ✅ Added step — helps verify your GitHub→AWS connection
+      - name: Verify AWS Connection
+        run: aws sts get-caller-identity
+
+      - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build
+      - name: Build Docker image
         run: docker build -t $ECR_REPO:$IMAGE_TAG -f app/Dockerfile app
 
-      - name: Trivy scan (image)
+      - name: Security scan (Trivy)
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
@@ -40,9 +50,12 @@ jobs:
           ignore-unfixed: true
           vuln-type: 'os,library'
 
-      - name: Push
+      - name: Push image to ECR
         run: docker push $ECR_REPO:$IMAGE_TAG
 
+  # -------------------------------
+  # 2️⃣ DEPLOY TO STAGING
+  # -------------------------------
   deploy-staging:
     needs: build-push
     runs-on: ubuntu-latest
@@ -50,9 +63,13 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -68,6 +85,9 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve -input=false -var-file=env/staging.tfvars -var "image_tag=${{ env.IMAGE_TAG }}"
 
+  # -------------------------------
+  # 3️⃣ DEPLOY TO PRODUCTION
+  # -------------------------------
   deploy-prod:
     needs: deploy-staging
     runs-on: ubuntu-latest
@@ -77,9 +97,13 @@ jobs:
     permissions:
       id-token: write
       contents: read
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -91,7 +115,7 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve -input=false -var-file=env/prod.tfvars -var "image_tag=${{ env.IMAGE_TAG }}"
 
-
+      # ✅ Optional: Slack notification for failed deploys
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.27.0
