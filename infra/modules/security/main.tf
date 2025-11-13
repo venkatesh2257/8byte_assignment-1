@@ -1,7 +1,3 @@
-# variable "vpc_id" {}
-# variable "vpc_cidr" {}
-# variable "name" {}
-
 # ALB security group
 resource "aws_security_group" "alb_sg" {
   name   = "${var.name}-alb-sg"

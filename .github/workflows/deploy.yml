@@ -2,12 +2,13 @@ name: Deploy
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches:
+      - main
+  workflow_dispatch:   # ✅ Enables manual trigger
 
 env:
   AWS_REGION: ap-south-1
-  ECR_REPO: ${{ vars.ECR_REPO }}          # Must be set in repo/org variables
+  ECR_REPO: ${{ vars.ECR_REPO }}        # Must be set in repo/org variables
   IMAGE_TAG: ${{ github.sha }}
   TF_WORKING_DIR: infra
 
@@ -31,7 +32,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ✅ Added step — helps verify your GitHub→AWS connection
       - name: Verify AWS Connection
         run: aws sts get-caller-identity
 
@@ -46,9 +46,9 @@ jobs:
         uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
-          format: 'table'
+          format: table
           ignore-unfixed: true
-          vuln-type: 'os,library'
+          vuln-type: os,library
 
       - name: Push image to ECR
         run: docker push $ECR_REPO:$IMAGE_TAG
@@ -91,9 +91,7 @@ jobs:
   deploy-prod:
     needs: deploy-staging
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: ${{ steps.get_url.outputs.alb }}
+    environment: production
     permissions:
       id-token: write
       contents: read
@@ -115,7 +113,6 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve -input=false -var-file=env/prod.tfvars -var "image_tag=${{ env.IMAGE_TAG }}"
 
-      # ✅ Optional: Slack notification for failed deploys
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.27.0
