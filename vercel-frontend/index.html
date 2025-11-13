@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"><title>8byte Frontend</title></head>
+  <body>
+    <h1>8byte DevOps Assignment</h1>
+    <p>Backend health: <span id="status">checking…</span></p>
+    <script>
+      fetch("http://YOUR-ALB-DNS/health").then(r=>r.json()).then(d=>{
+        document.getElementById('status').textContent = d.status || 'ok';
+      }).catch(()=>document.getElementById('status').textContent='error');
+    </script>
+  </body>
+</html>

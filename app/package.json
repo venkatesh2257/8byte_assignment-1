@@ -1,0 +1,9 @@
+{
+  "name": "eightbyte-demo",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {}
+}
